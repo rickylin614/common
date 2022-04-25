@@ -1,0 +1,11 @@
+apollo:
+  # appid: "golang"
+  # host: "http://127.0.0.1:28080"
+  # namespace: "api"
+  # cluster: "DEV"
+  # secretkey: "b0e9511fac8a4db08e143cbb5c98e4be"
+  host: https://gftyapolloapi.awoplay.com
+  appid: demo
+  cluster: demo1
+  namespace: demo1.demo1
+  secretkey: 6c9db8741d6a46ef9634a6999cda530f
