@@ -14,6 +14,30 @@ import (
 
 type aesCrypt func(origData []byte, key []byte) (crypted []byte, err error)
 
+type AesEncryptMode int
+
+const (
+	EN_CBC AesEncryptMode = iota
+	EN_ECB AesEncryptMode 
+	EN_CFB AesEncryptMode
+)
+
+func (AesEncryptMode) Int() int {
+	return AesEncryptMode.(int)
+}
+
+type AesDecryptMode int
+
+const (
+	DE_CBC AesDecryptMode = iota
+	DE_ECB AesDecryptMode 
+	DE_CFB AesDecryptMode
+)
+
+func (AesDecryptMode) Int() int {
+	return AesDecryptMode.(int)
+}
+
 // =================== CBC ======================
 func AesEncryptCBC(origData []byte, key []byte) (encrypted []byte, err error) {
 	// 分組秘鑰
@@ -134,8 +158,19 @@ func Md5Encrypt(origData ...string) string {
 }
 
 /* 使用base64封裝其餘AES加密方式 */
-func AesBase64Encrypt(origData []byte, key []byte, aesFunc aesCrypt) (got string, err error) {
-	gotEncrypted, err := aesFunc(origData, key)
+func AesBase64Encrypt(origData []byte, key []byte,mode AesEncryptMode) (got string, err error) {
+	// gotEncrypted, err := aesFunc(origData, key)
+	var gotEncrypted []byte
+	switch mode {
+	case EN_CBC:
+		gotEncrypted , err = AesEncryptCBC(b,key)
+	case EN_ECB:
+		gotEncrypted , err = AesEncryptECB(b,key)
+	case EN_CFB:
+		gotEncrypted , err = AesEncryptCFB(b,key)
+	default:
+		return nil, errors.New("mode error")
+	}
 	if err != nil {
 		return "", err
 	}
@@ -144,10 +179,19 @@ func AesBase64Encrypt(origData []byte, key []byte, aesFunc aesCrypt) (got string
 }
 
 /* 使用base64封裝其餘AES解密方式 */
-func AesBase64Decrypt(origData string, key []byte, aesFunc aesCrypt) ([]byte, error) {
+func AesBase64Decrypt(origData string, key []byte,mode AesDecryptMode) ([]byte, error) {
 	b, err := base64.StdEncoding.DecodeString(origData)
 	if err != nil {
 		return nil, err
 	}
-	return aesFunc(b, key)
+	switch mode {
+	case DE_CBC:
+		return AesDecryptCBC(b,key)
+	case DE_ECB:
+		return AesDecryptECB(b,key)
+	case DE_CFB:
+		return AesDecryptCFB(b,key)
+	default:
+		return nil, errors.New("mode error")
+	}
 }
