@@ -245,14 +245,14 @@ func TestAesBase64Encrypt(t *testing.T) {
 		name     string
 		origData []byte
 		key      []byte
-		aesFunc  aesCrypt
+		aesFunc  AesEncryptMode
 		want     string
 		wantErr  bool
 	}{
-		{"t1", []byte("YOYO"), []byte("123456789ABCDEFG"), AesEncryptCBC, "sCIdlnomB/xZVI1Ll/tMfg==", false},
-		{"t2", []byte("YOYO"), []byte("123456789ABCDEFG"), AesEncryptECB, "BK2xtB+MXsPuQyDXmS5W7A==", false},
+		{"t1", []byte("YOYO"), []byte("123456789ABCDEFG"), EN_CBC, "sCIdlnomB/xZVI1Ll/tMfg==", false},
+		{"t2", []byte("YOYO"), []byte("123456789ABCDEFG"), EN_ECB, "BK2xtB+MXsPuQyDXmS5W7A==", false},
 		// {"t3", []byte("YOYO"), []byte("123456789ABCDEFG"), AesEncryptCFB, "e6UCDdGDfdXZr+BYkqD9ShwjLYA=", false}, //CFB 每次結
-		{"t4", []byte("YOYO"), []byte("123456789ABCDEF"), AesEncryptCFB, "", true},
+		{"t4", []byte("YOYO"), []byte("123456789ABCDEF"), EN_CFB, "", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -273,14 +273,14 @@ func TestAesBase64Decrypt(t *testing.T) {
 		name     string
 		want     []byte
 		key      []byte
-		aesFunc  aesCrypt
+		aesFunc  AesDecryptMode
 		origData string
 		wantErr  bool
 	}{
-		{"t1", []byte("YOYO"), []byte("123456789ABCDEFG"), AesDecryptCBC, "sCIdlnomB/xZVI1Ll/tMfg==", false},
-		{"t2", []byte("YOYO"), []byte("123456789ABCDEFG"), AesDecryptECB, "BK2xtB+MXsPuQyDXmS5W7A==", false},
-		{"t3", []byte("YOYO"), []byte("123456789ABCDEFG"), AesDecryptCFB, "e6UCDdGDfdXZr+BYkqD9ShwjLYA=", false},
-		{"t4", nil, []byte("123456789A"), AesDecryptCBC, "AA", true},
+		{"t1", []byte("YOYO"), []byte("123456789ABCDEFG"), DE_CBC, "sCIdlnomB/xZVI1Ll/tMfg==", false},
+		{"t2", []byte("YOYO"), []byte("123456789ABCDEFG"), DE_ECB, "BK2xtB+MXsPuQyDXmS5W7A==", false},
+		{"t3", []byte("YOYO"), []byte("123456789ABCDEFG"), DE_CFB, "e6UCDdGDfdXZr+BYkqD9ShwjLYA=", false},
+		{"t4", nil, []byte("123456789A"), DE_CBC, "AA", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

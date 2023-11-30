@@ -1,0 +1,5 @@
+*.exe
+.vscode/
+.idea/
+.DS_Store
+**/volumn/

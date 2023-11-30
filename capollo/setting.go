@@ -130,7 +130,7 @@ func RedisClusterSet(key string) {
 		}
 	}
 	if len(hosts) != 0 {
-		credis.NewRedisClusterHelper(hosts)
+		credis.NewRedisCluster(hosts)
 	}
 }
 
@@ -142,7 +142,8 @@ func RedisSet(key string) {
 		return
 	}
 	var host string = m["host"].(string)
-	credis.NewRedisHelper(host)
+
+	credis.NewRedis(host)
 }
 
 /* 靠apollo設定初始化LogSet設定 */
