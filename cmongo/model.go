@@ -5,11 +5,14 @@ import (
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 type mongoDBWrapper struct {
-	client      *mongo.Client
-	collection  *mongo.Collection
+	client     *mongo.Client
+	collection *mongo.Collection
+	database   string
+
 	queryFilter bson.D
 	sort        bson.D
 	limit       int64
@@ -40,12 +43,60 @@ func (m *mongoDBWrapper) Insert(ctx context.Context, collection string, document
 }
 
 func (m *mongoDBWrapper) Find(ctx context.Context, collection string, query interface{}) ([]bson.M, error) {
-	//TODO implement me
-	panic("implement me")
+	// 設置集合
+	m.collection = m.client.Database(m.database).Collection(collection)
+
+	// 轉換自定義查詢條件為BSON
+	var bsonQuery bson.M
+	if query != nil {
+		bsonBytes, err := bson.Marshal(query)
+		if err != nil {
+			return nil, err
+		}
+		err = bson.Unmarshal(bsonBytes, &bsonQuery)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// 構建查詢過濾條件
+	var finalFilter bson.D
+	if len(m.queryFilter) > 0 {
+		finalFilter = append(finalFilter, bson.E{Key: "$and", Value: bson.A{m.queryFilter, bsonQuery}})
+	} else {
+		finalFilter = m.queryFilter
+	}
+
+	// 設置查詢選項
+	findOptions := options.Find()
+	if m.limit > 0 {
+		findOptions.SetLimit(m.limit)
+	}
+	if m.offset > 0 {
+		findOptions.SetSkip(m.offset)
+	}
+	if len(m.sort) > 0 {
+		findOptions.SetSort(m.sort)
+	}
+
+	// 執行查詢
+	cursor, err := m.collection.Find(ctx, finalFilter, findOptions)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	// 解析結果
+	var results []bson.M
+	if err = cursor.All(ctx, &results); err != nil {
+		return nil, err
+	}
+
+	return results, nil
 }
 
 func (m *mongoDBWrapper) Count(ctx context.Context, collection string) (int64, error) {
-	m.collection = m.client.Database("yourDatabaseName").Collection(collection)
+	m.collection = m.client.Database(m.database).Collection(collection)
 	count, err := m.collection.CountDocuments(ctx, m.queryFilter)
 	if err != nil {
 		return 0, err
@@ -59,7 +110,7 @@ func (m *mongoDBWrapper) Update(ctx context.Context, collection string, query in
 }
 
 func (m *mongoDBWrapper) UpdateBatch(ctx context.Context, collection string, updates []mongo.WriteModel) error {
-	m.collection = m.client.Database("yourDatabaseName").Collection(collection)
+	m.collection = m.client.Database(m.database).Collection(collection)
 	_, err := m.collection.BulkWrite(ctx, updates)
 	return err
 }
@@ -70,7 +121,7 @@ func (m *mongoDBWrapper) Delete(ctx context.Context, collection string, query in
 }
 
 func (m *mongoDBWrapper) DeleteBatch(ctx context.Context, collection string, deletes []mongo.WriteModel) error {
-	m.collection = m.client.Database("yourDatabaseName").Collection(collection)
+	m.collection = m.client.Database(m.database).Collection(collection)
 	_, err := m.collection.BulkWrite(ctx, deletes)
 	return err
 }
