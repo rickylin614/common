@@ -36,7 +36,7 @@ func TestMongoDBWrapper_Find(t *testing.T) {
 		Where("age > 10").
 		GroupBy("name").
 		Sum("age").
-		Having("name = 'BB'")
+		Having("age > 50")
 
 	results := make([]bson.M, 0)
 

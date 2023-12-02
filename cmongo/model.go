@@ -297,7 +297,7 @@ func (qb *QueryBuilder) GroupBy(fields ...string) *QueryBuilder {
 func (qb *QueryBuilder) Sum(fields ...string) *QueryBuilder {
 	for _, field := range fields {
 		qb.sumFields[field] = true
-		qb.group = append(qb.group, bson.E{Key: "total_$" + field, Value: bson.D{{"$sum", field}}})
+		qb.group = append(qb.group, bson.E{Key: "total_$" + field, Value: bson.D{{"$sum", "$" + field}}})
 	}
 	return qb
 }
