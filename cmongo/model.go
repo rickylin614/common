@@ -22,7 +22,7 @@ func NewMongoDB() *MongoDB {
 }
 
 func (m *MongoDB) Connect(ctx context.Context, uri, database string) (*MongoDB, error) {
-	client, err := mongo.Connect(ctx, options.Client().ApplyURI("mongodb://root:example@localhost:27017"))
+	client, err := mongo.Connect(ctx, options.Client().ApplyURI(uri))
 	if err != nil {
 		return nil, err
 	}
