@@ -57,33 +57,59 @@ func (m *MongoDB) Connect(ctx context.Context, uri, database string) (*MongoDB, 
 }
 
 func (m *MongoDB) Insert(ctx context.Context, collection string, document interface{}) error {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (m *MongoDB) Update(ctx context.Context, collection string, query interface{}, update interface{}) error {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (m *MongoDB) UpdateBatch(ctx context.Context, collection string, updates []mongo.WriteModel) error {
-	c := m.client.Database(m.database).Collection(collection)
-	_, err := c.BulkWrite(ctx, updates)
+	coll := m.client.Database(m.database).Collection(collection)
+	_, err := coll.InsertOne(ctx, document)
 	return err
 }
 
-func (m *MongoDB) Delete(ctx context.Context, collection string, query interface{}) error {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (m *MongoDB) DeleteBatch(ctx context.Context, collection string, deletes []mongo.WriteModel) error {
-	c := m.client.Database(m.database).Collection(collection)
-	_, err := c.BulkWrite(ctx, deletes)
+func (m *MongoDB) InsertBatch(ctx context.Context, collection string, documents []interface{}) error {
+	coll := m.client.Database(m.database).Collection(collection)
+	_, err := coll.InsertMany(ctx, documents)
 	return err
 }
 
-func (m *MongoDB) Find(ctx context.Context, table string, qb *queryBuilder, results any) error {
+func (m *MongoDB) Update(ctx context.Context, collection string, qb *QueryBuilder, update interface{}) error {
+	filter, _, _ := qb.Build()
+	coll := m.client.Database(m.database).Collection(collection)
+	_, err := coll.UpdateOne(ctx, filter, update)
+	return err
+}
+
+type UpdateModel struct {
+	Filter *QueryBuilder
+	Update interface{}
+}
+
+func (m *MongoDB) UpdateBatch(ctx context.Context, collection string, updates []UpdateModel) error {
+	coll := m.client.Database(m.database).Collection(collection)
+	models := make([]mongo.WriteModel, len(updates))
+	for i, update := range updates {
+		filter, _, _ := update.Filter.Build()
+		models[i] = mongo.NewUpdateOneModel().SetFilter(filter).SetUpdate(update.Update)
+	}
+	_, err := coll.BulkWrite(ctx, models)
+	return err
+}
+
+func (m *MongoDB) Delete(ctx context.Context, collection string, qb *QueryBuilder) error {
+	filter, _, _ := qb.Build()
+	coll := m.client.Database(m.database).Collection(collection)
+	_, err := coll.DeleteOne(ctx, filter)
+	return err
+}
+
+func (m *MongoDB) DeleteBatch(ctx context.Context, collection string, deletes []*QueryBuilder) error {
+	coll := m.client.Database(m.database).Collection(collection)
+	models := make([]mongo.WriteModel, len(deletes))
+	for i, delete := range deletes {
+		filter, _, _ := delete.Build()
+		models[i] = mongo.NewDeleteOneModel().SetFilter(filter)
+	}
+	_, err := coll.BulkWrite(ctx, models)
+	return err
+}
+
+func (m *MongoDB) Find(ctx context.Context, table string, qb *QueryBuilder, results any) error {
 	filter, group, opts := qb.Build()
 	collection := m.client.Database(m.database).Collection(table)
 	if len(group) > 0 {
@@ -110,7 +136,7 @@ func (m *MongoDB) Find(ctx context.Context, table string, qb *queryBuilder, resu
 	}
 }
 
-func (m *MongoDB) Count(ctx context.Context, table string, qb *queryBuilder) (int64, error) {
+func (m *MongoDB) Count(ctx context.Context, table string, qb *QueryBuilder) (int64, error) {
 	filter, group, _ := qb.Build()
 	collection := m.client.Database(m.database).Collection(table)
 	if len(group) > 0 {
@@ -145,7 +171,7 @@ func (m *MongoDB) Count(ctx context.Context, table string, qb *queryBuilder) (in
 	}
 }
 
-type queryBuilder struct {
+type QueryBuilder struct {
 	filter    bson.D
 	sort      bson.D
 	limit     int64
@@ -155,11 +181,11 @@ type queryBuilder struct {
 	having    bson.D
 }
 
-func NewQueryBuilder() *queryBuilder {
-	return &queryBuilder{sumFields: map[string]bool{}}
+func NewQueryBuilder() *QueryBuilder {
+	return &QueryBuilder{sumFields: map[string]bool{}}
 }
 
-func (qb *queryBuilder) Build() (bson.D, bson.D, *options.FindOptions) {
+func (qb *QueryBuilder) Build() (bson.D, bson.D, *options.FindOptions) {
 	findOptions := options.Find()
 	if qb.limit > 0 {
 		findOptions.SetLimit(qb.limit)
@@ -173,34 +199,7 @@ func (qb *queryBuilder) Build() (bson.D, bson.D, *options.FindOptions) {
 	return qb.filter, qb.group, findOptions
 }
 
-// func (qb *QueryBuilder) Where(field string, value interface{}, comparison ...string) *QueryBuilder {
-// 	var filter bson.E
-
-// 	compare := ""
-// 	if len(comparison) > 0 {
-// 		compare = comparison[0]
-// 	}
-
-// 	switch compare {
-// 	case "=":
-// 		filter = bson.E{Key: field, Value: value}
-// 	case ">":
-// 		filter = bson.E{Key: field, Value: bson.M{"$gt": value}}
-// 	case "<":
-// 		filter = bson.E{Key: field, Value: bson.M{"$lt": value}}
-// 	case ">=":
-// 		filter = bson.E{Key: field, Value: bson.M{"$gte": value}}
-// 	case "<=":
-// 		filter = bson.E{Key: field, Value: bson.M{"$lte": value}}
-// 	default:
-// 		filter = bson.E{Key: field, Value: value}
-// 	}
-
-// 	qb.filter = append(qb.filter, filter)
-// 	return qb
-// }
-
-func (qb *queryBuilder) Where(condition string) *queryBuilder {
+func (qb *QueryBuilder) Where(condition string) *QueryBuilder {
 	parts := strings.Fields(condition)
 	if len(parts) != 3 {
 		return qb
@@ -231,6 +230,25 @@ func (qb *queryBuilder) Where(condition string) *queryBuilder {
 		filter = bson.E{Key: field, Value: bson.M{"$gte": value}}
 	case "<=":
 		filter = bson.E{Key: field, Value: bson.M{"$lte": value}}
+	case "in":
+		values := strings.Split(parts[2], ",")
+		filter = bson.E{Key: field, Value: bson.M{"$in": values}}
+	case "like":
+		likeValue := parts[2]
+		regexPattern := ""
+		// 檢測並轉換不同的模式
+		if strings.HasPrefix(likeValue, "%") && strings.HasSuffix(likeValue, "%") {
+			// 匹配任意位置的子串（%value%）
+			regexPattern = strings.Trim(likeValue, "%")
+		} else if strings.HasPrefix(likeValue, "%") {
+			// 匹配結尾的子串（%value）
+			regexPattern = strings.TrimLeft(likeValue, "%") + "$"
+		} else if strings.HasSuffix(likeValue, "%") {
+			// 匹配開頭的子串（value%）
+			regexPattern = "^" + strings.TrimRight(likeValue, "%")
+		}
+		regex := bson.M{"$regex": regexPattern, "$options": "i"} // 使用 'i' 選項實現不區分大小寫的匹配
+		filter = bson.E{Key: field, Value: regex}
 	default:
 		return qb
 	}
@@ -240,7 +258,7 @@ func (qb *queryBuilder) Where(condition string) *queryBuilder {
 }
 
 // Sort default ASC, use `-` prefix as desc, example: "-age" is "age desc"
-func (qb *queryBuilder) Sort(fields ...string) *queryBuilder {
+func (qb *QueryBuilder) Sort(fields ...string) *QueryBuilder {
 	for _, field := range fields {
 		order := 1 // Ascending
 		if strings.HasPrefix(field, "-") {
@@ -252,12 +270,12 @@ func (qb *queryBuilder) Sort(fields ...string) *queryBuilder {
 	return qb
 }
 
-func (qb *queryBuilder) Limit(limit int64) *queryBuilder {
+func (qb *QueryBuilder) Limit(limit int64) *QueryBuilder {
 	qb.limit = limit
 	return qb
 }
 
-func (qb *queryBuilder) Offset(offset int64) *queryBuilder {
+func (qb *QueryBuilder) Offset(offset int64) *QueryBuilder {
 	qb.offset = offset
 	return qb
 }
@@ -267,7 +285,7 @@ func (qb *queryBuilder) Offset(offset int64) *queryBuilder {
 // 	return qb
 // }
 
-func (qb *queryBuilder) GroupBy(fields ...string) *queryBuilder {
+func (qb *QueryBuilder) GroupBy(fields ...string) *QueryBuilder {
 	groupFields := bson.D{}
 	for _, field := range fields {
 		groupFields = append(groupFields, bson.E{Key: field, Value: "$" + field})
@@ -276,7 +294,7 @@ func (qb *queryBuilder) GroupBy(fields ...string) *queryBuilder {
 	return qb
 }
 
-func (qb *queryBuilder) Sum(fields ...string) *queryBuilder {
+func (qb *QueryBuilder) Sum(fields ...string) *QueryBuilder {
 	for _, field := range fields {
 		qb.sumFields[field] = true
 		qb.group = append(qb.group, bson.E{Key: "total_$" + field, Value: bson.D{{"$sum", field}}})
@@ -284,7 +302,7 @@ func (qb *queryBuilder) Sum(fields ...string) *queryBuilder {
 	return qb
 }
 
-func (qb *queryBuilder) Having(condition string) *queryBuilder {
+func (qb *QueryBuilder) Having(condition string) *QueryBuilder {
 	parts := strings.Fields(condition)
 	if len(parts) != 3 {
 		return qb
@@ -319,6 +337,25 @@ func (qb *queryBuilder) Having(condition string) *queryBuilder {
 		filter = bson.E{Key: field, Value: bson.M{"$gte": value}}
 	case "<=":
 		filter = bson.E{Key: field, Value: bson.M{"$lte": value}}
+	case "in":
+		values := strings.Split(parts[2], ",")
+		filter = bson.E{Key: field, Value: bson.M{"$in": values}}
+	case "like":
+		likeValue := parts[2]
+		regexPattern := ""
+		// 檢測並轉換不同的模式
+		if strings.HasPrefix(likeValue, "%") && strings.HasSuffix(likeValue, "%") {
+			// 匹配任意位置的子串（%value%）
+			regexPattern = strings.Trim(likeValue, "%")
+		} else if strings.HasPrefix(likeValue, "%") {
+			// 匹配結尾的子串（%value）
+			regexPattern = strings.TrimLeft(likeValue, "%") + "$"
+		} else if strings.HasSuffix(likeValue, "%") {
+			// 匹配開頭的子串（value%）
+			regexPattern = "^" + strings.TrimRight(likeValue, "%")
+		}
+		regex := bson.M{"$regex": regexPattern, "$options": "i"} // 使用 'i' 選項實現不區分大小寫的匹配
+		filter = bson.E{Key: field, Value: regex}
 	default:
 		return qb
 	}
