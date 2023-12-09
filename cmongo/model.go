@@ -114,11 +114,11 @@ func (m *MongoDB) Find(ctx context.Context, table string, qb *QueryBuilder, resu
 	collection := m.client.Database(m.database).Collection(table)
 	if len(group) > 0 {
 		pipeline := mongo.Pipeline{
-			{{"$match", filter}},
-			{{"$group", group}},
+			{{Key: "$match", Value: filter}},
+			{{Key: "$group", Value: group}},
 		}
 		if len(qb.having) > 0 {
-			pipeline = append(pipeline, bson.D{{"$match", qb.having}})
+			pipeline = append(pipeline, bson.D{{Key: "$match", Value: qb.having}})
 		}
 		cursor, err := collection.Aggregate(ctx, pipeline)
 		if err != nil {
@@ -141,13 +141,13 @@ func (m *MongoDB) Count(ctx context.Context, table string, qb *QueryBuilder) (in
 	collection := m.client.Database(m.database).Collection(table)
 	if len(group) > 0 {
 		pipeline := mongo.Pipeline{
-			{{"$match", filter}},
-			{{"$group", group}},
+			{{Key: "$match", Value: filter}},
+			{{Key: "$group", Value: group}},
 		}
 		if len(qb.having) > 0 {
-			pipeline = append(pipeline, bson.D{{"$match", qb.having}})
+			pipeline = append(pipeline, bson.D{{Key: "$match", Value: qb.having}})
 		}
-		pipeline = append(pipeline, bson.D{{"$count", "count"}})
+		pipeline = append(pipeline, bson.D{{Key: "$count", Value: "count"}})
 
 		cursor, err := collection.Aggregate(ctx, pipeline)
 		if err != nil {
@@ -297,7 +297,7 @@ func (qb *QueryBuilder) GroupBy(fields ...string) *QueryBuilder {
 func (qb *QueryBuilder) Sum(fields ...string) *QueryBuilder {
 	for _, field := range fields {
 		qb.sumFields[field] = true
-		qb.group = append(qb.group, bson.E{Key: "total_$" + field, Value: bson.D{{"$sum", "$" + field}}})
+		qb.group = append(qb.group, bson.E{Key: "total_$" + field, Value: bson.D{{Key: "$sum", Value: "$" + field}}})
 	}
 	return qb
 }
