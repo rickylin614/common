@@ -18,24 +18,24 @@ type AesEncryptMode int
 
 const (
 	EN_CBC AesEncryptMode = iota
-	EN_ECB AesEncryptMode 
-	EN_CFB AesEncryptMode
+	EN_ECB
+	EN_CFB
 )
 
-func (AesEncryptMode) Int() int {
-	return AesEncryptMode.(int)
+func (a AesEncryptMode) Int() int {
+	return int(a)
 }
 
 type AesDecryptMode int
 
 const (
 	DE_CBC AesDecryptMode = iota
-	DE_ECB AesDecryptMode 
-	DE_CFB AesDecryptMode
+	DE_ECB
+	DE_CFB
 )
 
-func (AesDecryptMode) Int() int {
-	return AesDecryptMode.(int)
+func (a AesDecryptMode) Int() int {
+	return int(a)
 }
 
 // =================== CBC ======================
@@ -147,7 +147,7 @@ func AesDecryptCFB(encrypted []byte, key []byte) (decrypted []byte, err error) {
 	return encrypted, nil
 }
 
-//=================== MD5 ======================
+// =================== MD5 ======================
 func Md5Encrypt(origData ...string) string {
 	str := ""
 	for _, v := range origData {
@@ -158,18 +158,17 @@ func Md5Encrypt(origData ...string) string {
 }
 
 /* 使用base64封裝其餘AES加密方式 */
-func AesBase64Encrypt(origData []byte, key []byte,mode AesEncryptMode) (got string, err error) {
-	// gotEncrypted, err := aesFunc(origData, key)
+func AesBase64Encrypt(origData []byte, key []byte, mode AesEncryptMode) (got string, err error) {
 	var gotEncrypted []byte
 	switch mode {
 	case EN_CBC:
-		gotEncrypted , err = AesEncryptCBC(b,key)
+		gotEncrypted, err = AesEncryptCBC(origData, key)
 	case EN_ECB:
-		gotEncrypted , err = AesEncryptECB(b,key)
+		gotEncrypted, err = AesEncryptECB(origData, key)
 	case EN_CFB:
-		gotEncrypted , err = AesEncryptCFB(b,key)
+		gotEncrypted, err = AesEncryptCFB(origData, key)
 	default:
-		return nil, errors.New("mode error")
+		return "", errors.New("mode error")
 	}
 	if err != nil {
 		return "", err
@@ -179,18 +178,18 @@ func AesBase64Encrypt(origData []byte, key []byte,mode AesEncryptMode) (got stri
 }
 
 /* 使用base64封裝其餘AES解密方式 */
-func AesBase64Decrypt(origData string, key []byte,mode AesDecryptMode) ([]byte, error) {
+func AesBase64Decrypt(origData string, key []byte, mode AesDecryptMode) ([]byte, error) {
 	b, err := base64.StdEncoding.DecodeString(origData)
 	if err != nil {
 		return nil, err
 	}
 	switch mode {
 	case DE_CBC:
-		return AesDecryptCBC(b,key)
+		return AesDecryptCBC(b, key)
 	case DE_ECB:
-		return AesDecryptECB(b,key)
+		return AesDecryptECB(b, key)
 	case DE_CFB:
-		return AesDecryptCFB(b,key)
+		return AesDecryptCFB(b, key)
 	default:
 		return nil, errors.New("mode error")
 	}

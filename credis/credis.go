@@ -5,9 +5,9 @@ import (
 	"log"
 	"time"
 
-	"github.com/go-redis/redis/v8"
-	"github.com/go-redsync/redsync/v4"
-	"github.com/go-redsync/redsync/v4/redis/goredis/v8"
+	redis "github.com/go-redis/redis/v8"
+	redsync "github.com/go-redsync/redsync/v4"
+	goredis "github.com/go-redsync/redsync/v4/redis/goredis/v8"
 	apmgoredis "go.elastic.co/apm/module/apmgoredisv8"
 )
 
