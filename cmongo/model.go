@@ -3,7 +3,7 @@ package cmongo
 import (
 	"context"
 	"fmt"
-	"strconv"
+	"regexp"
 	"strings"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -11,6 +11,13 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.mongodb.org/mongo-driver/mongo/readpref"
 )
+
+// QueryCondition 定义一个查询条件的结构
+type QueryCondition struct {
+	Field    string // 字段名称
+	Operator string // 操作符，如 "=", ">", "<", "like" 等
+	Value    []any  // 值
+}
 
 type MongoDB struct {
 	client   *mongo.Client
@@ -62,7 +69,7 @@ func (m *MongoDB) Insert(ctx context.Context, collection string, document interf
 	return err
 }
 
-func (m *MongoDB) InsertBatch(ctx context.Context, collection string, documents []interface{}) error {
+func (m *MongoDB) InsertBatch(ctx context.Context, collection string, documents []any) error {
 	coll := m.client.Database(m.database).Collection(collection)
 	_, err := coll.InsertMany(ctx, documents)
 	return err
@@ -101,8 +108,8 @@ func (m *MongoDB) Delete(ctx context.Context, collection string, qb *QueryBuilde
 func (m *MongoDB) DeleteBatch(ctx context.Context, collection string, deletes []*QueryBuilder) error {
 	coll := m.client.Database(m.database).Collection(collection)
 	models := make([]mongo.WriteModel, len(deletes))
-	for i, delete := range deletes {
-		filter, _, _ := delete.Build()
+	for i, del := range deletes {
+		filter, _, _ := del.Build()
 		models[i] = mongo.NewDeleteOneModel().SetFilter(filter)
 	}
 	_, err := coll.BulkWrite(ctx, models)
@@ -179,6 +186,7 @@ type QueryBuilder struct {
 	group     bson.D
 	sumFields map[string]bool
 	having    bson.D
+	err       error
 }
 
 func NewQueryBuilder() *QueryBuilder {
@@ -197,64 +205,6 @@ func (qb *QueryBuilder) Build() (bson.D, bson.D, *options.FindOptions) {
 		findOptions.SetSort(qb.sort)
 	}
 	return qb.filter, qb.group, findOptions
-}
-
-func (qb *QueryBuilder) Where(condition string) *QueryBuilder {
-	parts := strings.Fields(condition)
-	if len(parts) != 3 {
-		return qb
-	}
-
-	field := parts[0]
-	operator := parts[1]
-	var value any
-	value = parts[2]
-	if v, ok := value.(string); ok {
-		i, err := strconv.Atoi(v)
-		if strings.HasPrefix(v, `'`) && strings.HasSuffix(v, `'`) {
-			value = v[1 : len(v)-1]
-		} else if err == nil {
-			value = i
-		}
-	}
-
-	var filter bson.E
-	switch operator {
-	case "=":
-		filter = bson.E{Key: field, Value: value}
-	case ">":
-		filter = bson.E{Key: field, Value: bson.M{"$gt": value}}
-	case "<":
-		filter = bson.E{Key: field, Value: bson.M{"$lt": value}}
-	case ">=":
-		filter = bson.E{Key: field, Value: bson.M{"$gte": value}}
-	case "<=":
-		filter = bson.E{Key: field, Value: bson.M{"$lte": value}}
-	case "in":
-		values := strings.Split(parts[2], ",")
-		filter = bson.E{Key: field, Value: bson.M{"$in": values}}
-	case "like":
-		likeValue := parts[2]
-		regexPattern := ""
-		// 檢測並轉換不同的模式
-		if strings.HasPrefix(likeValue, "%") && strings.HasSuffix(likeValue, "%") {
-			// 匹配任意位置的子串（%value%）
-			regexPattern = strings.Trim(likeValue, "%")
-		} else if strings.HasPrefix(likeValue, "%") {
-			// 匹配結尾的子串（%value）
-			regexPattern = strings.TrimLeft(likeValue, "%") + "$"
-		} else if strings.HasSuffix(likeValue, "%") {
-			// 匹配開頭的子串（value%）
-			regexPattern = "^" + strings.TrimRight(likeValue, "%")
-		}
-		regex := bson.M{"$regex": regexPattern, "$options": "i"} // 使用 'i' 選項實現不區分大小寫的匹配
-		filter = bson.E{Key: field, Value: regex}
-	default:
-		return qb
-	}
-
-	qb.filter = append(qb.filter, filter)
-	return qb
 }
 
 // Sort default ASC, use `-` prefix as desc, example: "-age" is "age desc"
@@ -297,69 +247,202 @@ func (qb *QueryBuilder) GroupBy(fields ...string) *QueryBuilder {
 func (qb *QueryBuilder) Sum(fields ...string) *QueryBuilder {
 	for _, field := range fields {
 		qb.sumFields[field] = true
-		qb.group = append(qb.group, bson.E{Key: "total_$" + field, Value: bson.D{{Key: "$sum", Value: "$" + field}}})
+		qb.group = append(qb.group, bson.E{Key: "total_" + field, Value: bson.D{{Key: "$sum", Value: "$" + field}}})
 	}
 	return qb
 }
 
-func (qb *QueryBuilder) Having(condition string) *QueryBuilder {
-	parts := strings.Fields(condition)
-	if len(parts) != 3 {
-		return qb
+func (qb *QueryBuilder) Having(query interface{}, args ...interface{}) *QueryBuilder {
+	// 檢查 query 是否為字符串
+	if condition, ok := query.(string); ok {
+		if strings.Contains(condition, " ") {
+			// 處理簡單的字符串查詢
+			v := qb.processSimpleCondition(condition, true, args...)
+			qb.having = append(qb.having, v...)
+		} else if len(args) > 0 {
+			qb.having = append(qb.having, bson.E{Key: "total_" + condition, Value: args[0]})
+		}
+	} else {
+		switch v := query.(type) {
+		case bson.E:
+			// 直接添加 BSON 表達式
+			qb.having = append(qb.having, v)
+		case map[string]interface{}:
+			// 處理映射類型的查詢
+			for key, value := range v {
+				qb.having = append(qb.having, bson.E{Key: key, Value: value})
+			}
+		case []bson.E:
+			// 處理 BSON 表達式陣列
+			qb.having = append(qb.having, v...)
+		default:
+			// 处理结构体类型的查询
+			bsonBytes, err := bson.Marshal(v)
+			if err != nil {
+				qb.err = err
+				return qb
+			}
+			var bsonDoc bson.D
+			err = bson.Unmarshal(bsonBytes, &bsonDoc)
+			if err != nil {
+				qb.err = err
+				return qb
+			}
+			qb.having = append(qb.having, bsonDoc...)
+		}
 	}
+	return qb
+}
 
-	field := parts[0]
-	// sum field with prefix total_$
-	if _, ok := qb.sumFields[field]; ok {
-		field = "total_$" + field
+func (qb *QueryBuilder) Where(query interface{}, args ...interface{}) *QueryBuilder {
+	// 檢查 query 是否為字符串
+	if condition, ok := query.(string); ok {
+		if strings.Contains(condition, " ") {
+			// 處理簡單的字符串查詢
+			v := qb.processSimpleCondition(condition, false, args...)
+			qb.filter = append(qb.filter, v...)
+		} else if len(args) > 0 {
+			qb.filter = append(qb.filter, bson.E{Key: condition, Value: args[0]})
+		}
+	} else {
+		switch v := query.(type) {
+		case bson.E:
+			// 直接添加 BSON 表達式
+			qb.filter = append(qb.filter, v)
+		case map[string]interface{}:
+			// 處理映射類型的查詢
+			for key, value := range v {
+				qb.filter = append(qb.filter, bson.E{Key: key, Value: value})
+			}
+		case []bson.E:
+			// 處理 BSON 表達式陣列
+			qb.filter = append(qb.filter, v...)
+			// 可以根據需要添加更多的條件類型
+		default:
+			// 处理结构体类型的查询
+			bsonBytes, err := bson.Marshal(v)
+			if err != nil {
+				qb.err = err
+				return qb
+			}
+			var bsonDoc bson.D
+			err = bson.Unmarshal(bsonBytes, &bsonDoc)
+			if err != nil {
+				qb.err = err
+				return qb
+			}
+			qb.filter = append(qb.filter, bsonDoc...)
+		}
 	}
-	operator := parts[1]
-	var value any
-	value = parts[2]
-	if v, ok := value.(string); ok {
-		i, err := strconv.Atoi(v)
-		if strings.HasPrefix(v, `'`) && strings.HasSuffix(v, `'`) {
-			value = v[1 : len(v)-1]
-		} else if err == nil {
-			value = i
+	return qb
+}
+
+func (qb *QueryBuilder) processSimpleCondition(condition string, isHaving bool, args ...interface{}) bson.D {
+	// 使用正则表达式分割条件，以支持复杂条件，如 "AND"、"OR"
+	conditionParts := regexp.MustCompile(`\s+(AND|OR|and|or)\s+`).Split(condition, -1)
+	logicalOperators := regexp.MustCompile(`\s+(AND|OR|and|or)\s+`).FindAllString(condition, -1)
+
+	argIndex := 0
+	filters := make([]bson.E, 0)
+	for _, part := range conditionParts {
+		parts := strings.Fields(part)
+		if len(parts) >= 3 {
+			field := parts[0]
+			operator := parts[1]
+			var arrValue []any
+
+			if isHaving == true {
+				field = "total_" + field
+			}
+
+			// 检查是否有 '?' 占位符，若有则替换为 args 中的相应值
+			for strings.Contains(parts[2], "?") && argIndex < len(args) {
+				strings.Replace(parts[2], "?", "", 1)
+				arrValue = append(arrValue, args[argIndex])
+				argIndex++
+			}
+			if len(arrValue) == 0 {
+				arrValue = append(arrValue, parts[2])
+			}
+
+			// 创建查询条件
+			cond := QueryCondition{Field: field, Operator: operator, Value: arrValue}
+			// 处理每个子条件
+			filter := processConditionPart(cond)
+			filters = append(filters, filter)
 		}
 	}
 
+	// 在所有条件都被处理完之后，根据逻辑运算符来组合它们
+	var result bson.D
+	for i, filter := range filters {
+		if i != 0 && i-1 < len(logicalOperators) {
+			result = append(result, filter)
+			op := parseLogic(logicalOperators[i-1])
+			result = bson.D{bson.E{Key: op, Value: result}}
+		} else {
+			result = append(result, filter)
+		}
+	}
+	return result
+}
+
+// processConditionPart 處理單個條件部分
+func processConditionPart(condition QueryCondition) bson.E {
+	// 生成过滤器
 	var filter bson.E
+	switch condition.Operator {
+	case "=", ">", "<", ">=", "<=":
+		if len(condition.Value) > 0 {
+			filter = bson.E{Key: condition.Field, Value: bson.M{parseOperator(condition.Operator): condition.Value[0]}}
+		}
+	case "in":
+		filter = bson.E{Key: condition.Field, Value: bson.M{parseOperator(condition.Operator): condition.Value}}
+	case "like":
+		// 假设 Value 是一个字符串
+		if str, ok := condition.Value[0].(string); ok {
+			filter = buildLikeFilter(condition.Field, str)
+		}
+	}
+
+	return filter
+}
+
+// parseOperator 将常规比较操作符转换为 MongoDB 的操作符
+func parseOperator(operator string) string {
 	switch operator {
 	case "=":
-		filter = bson.E{Key: field, Value: value}
+		return "$eq" // 等于
 	case ">":
-		filter = bson.E{Key: field, Value: bson.M{"$gt": value}}
+		return "$gt" // 大于
 	case "<":
-		filter = bson.E{Key: field, Value: bson.M{"$lt": value}}
+		return "$lt" // 小于
 	case ">=":
-		filter = bson.E{Key: field, Value: bson.M{"$gte": value}}
+		return "$gte" // 大于或等于
 	case "<=":
-		filter = bson.E{Key: field, Value: bson.M{"$lte": value}}
+		return "$lte" // 小于或等于
 	case "in":
-		values := strings.Split(parts[2], ",")
-		filter = bson.E{Key: field, Value: bson.M{"$in": values}}
-	case "like":
-		likeValue := parts[2]
-		regexPattern := ""
-		// 檢測並轉換不同的模式
-		if strings.HasPrefix(likeValue, "%") && strings.HasSuffix(likeValue, "%") {
-			// 匹配任意位置的子串（%value%）
-			regexPattern = strings.Trim(likeValue, "%")
-		} else if strings.HasPrefix(likeValue, "%") {
-			// 匹配結尾的子串（%value）
-			regexPattern = strings.TrimLeft(likeValue, "%") + "$"
-		} else if strings.HasSuffix(likeValue, "%") {
-			// 匹配開頭的子串（value%）
-			regexPattern = "^" + strings.TrimRight(likeValue, "%")
-		}
-		regex := bson.M{"$regex": regexPattern, "$options": "i"} // 使用 'i' 選項實現不區分大小寫的匹配
-		filter = bson.E{Key: field, Value: regex}
+		return "$in"
 	default:
-		return qb
+		return "" // 如果操作符不匹配，返回空字符串
 	}
+}
 
-	qb.having = append(qb.having, filter)
-	return qb
+func parseLogic(logic string) string {
+	logic = strings.ToLower(strings.TrimSpace(logic))
+	return "$" + logic
+}
+
+// buildLikeFilter 創建用於模糊匹配的過濾器
+func buildLikeFilter(field, pattern string) bson.E {
+	regexPattern := ""
+	if strings.HasPrefix(pattern, "%") && strings.HasSuffix(pattern, "%") {
+		regexPattern = strings.Trim(pattern, "%")
+	} else if strings.HasPrefix(pattern, "%") {
+		regexPattern = strings.TrimLeft(pattern, "%") + "$"
+	} else if strings.HasSuffix(pattern, "%") {
+		regexPattern = "^" + strings.TrimRight(pattern, "%")
+	}
+	regex := bson.M{"$regex": regexPattern, "$options": "i"} // 不區分大小寫
+	return bson.E{Key: field, Value: regex}
 }
