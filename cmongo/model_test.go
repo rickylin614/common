@@ -54,7 +54,7 @@ func TestMongoDBWrapper_Find(t *testing.T) {
 		GroupBy("name").
 		Sum("age").
 		Having("age > ?", 32)
-	
+
 	results := make([]bson.M, 0)
 
 	err = wrapper.Find(ctx, testCollection, cond, &results)
@@ -66,7 +66,9 @@ func TestMongoDBWrapper_Find(t *testing.T) {
 		t.Errorf("Expected to find at least one document, but found none")
 	}
 
-	fmt.Println(results)
+	for _, v := range results {
+		fmt.Printf("%+v", v)
+	}
 
 	wrapper.client.Disconnect(context.Background())
 }
