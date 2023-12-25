@@ -5,26 +5,22 @@ import (
 	"errors"
 	"runtime"
 	"sync"
-	"time"
 )
 
 var c = &controller{
 	acceptNew: true,
-	ctx:       context.Background(),
 }
 
 func AddHandler(h Handler) {
 	c.AddHandler(h)
 }
 
-func RunHandlers(ctx context.Context) {
-	c.RunHandlers(ctx)
+func RunHandlers() {
+	c.RunHandlers()
 }
 
-func ShutdownSignal(timeout time.Duration) error {
-	c.ShutdownSignal()
-
-	tc := time.Tick(timeout)
+func Stop(shutdownCtx context.Context) error {
+	c.Stop()
 
 	done := make(chan struct{})
 
@@ -44,7 +40,7 @@ func ShutdownSignal(timeout time.Duration) error {
 
 	for {
 		select {
-		case <-tc:
+		case <-shutdownCtx.Done():
 			return errors.New("shutdown timeout")
 		case <-done:
 			return nil
@@ -61,7 +57,7 @@ type controller struct {
 }
 
 type Handler struct {
-	handlerFunc func(ctx context.Context)
+	handlerFunc func()
 	worker      int
 }
 
@@ -77,7 +73,7 @@ func (c *controller) Decrement() {
 	c.count--
 }
 
-func (c *controller) ShutdownSignal() {
+func (c *controller) Stop() {
 	c.lock.Lock()
 	c.acceptNew = false
 	c.lock.Unlock()
@@ -86,16 +82,17 @@ func (c *controller) ShutdownSignal() {
 func (c *controller) AddHandler(h Handler) {
 	wrappedHandler := Handler{
 		worker: h.worker,
-		handlerFunc: func(ctx context.Context) {
+		handlerFunc: func() {
+			var canAccept bool
 			for {
 				c.lock.Lock()
-				canAccept := c.acceptNew
+				canAccept = c.acceptNew
 				c.lock.Unlock()
 
 				// 只有在 acceptNew 为 true 时才执行
 				if canAccept {
 					c.Increment()
-					h.handlerFunc(ctx)
+					h.handlerFunc()
 					c.Decrement()
 				} else {
 					return
@@ -107,10 +104,10 @@ func (c *controller) AddHandler(h Handler) {
 	c.handlers = append(c.handlers, wrappedHandler)
 }
 
-func (c *controller) RunHandlers(ctx context.Context) {
+func (c *controller) RunHandlers() {
 	for _, handler := range c.handlers {
 		for i := 0; i < handler.worker; i++ {
-			go handler.handlerFunc(ctx) // 启动每个处理器
+			go handler.handlerFunc() // 启动每个处理器
 		}
 	}
 }
