@@ -1,9 +1,10 @@
-package ckafka
+package cqueue
 
 import (
 	"context"
+	"errors"
+	"runtime"
 	"sync"
-	"time"
 )
 
 var c = &controller{
@@ -18,24 +19,31 @@ func RunHandlers() {
 	c.RunHandlers()
 }
 
-func ShutdownSignal(ctx context.Context) {
-	c.ShutdownSignal()
+func Stop(shutdownCtx context.Context) error {
+	c.Stop()
 
-	// 等待 ctx 完成或 count 降至 0
-	for {
+	done := make(chan struct{})
+
+	go func() {
 		c.lock.Lock()
 		count := c.count
 		c.lock.Unlock()
 
+		// 等待 ctx 完成或 count 降至 0
 		if count == 0 {
-			return // 如果 count 为 0，退出函数
+			done <- struct{}{}
+			return
 		}
 
+		runtime.Gosched()
+	}()
+
+	for {
 		select {
-		case <-ctx.Done():
-			return // 如果 context 完成，退出函数
-		default:
-			time.Sleep(time.Millisecond * 100) // 短暂等待再次检查
+		case <-shutdownCtx.Done():
+			return errors.New("shutdown timeout")
+		case <-done:
+			return nil
 		}
 	}
 }
@@ -45,6 +53,7 @@ type controller struct {
 	lock      sync.Mutex
 	acceptNew bool
 	handlers  []Handler
+	ctx       context.Context
 }
 
 type Handler struct {
@@ -64,7 +73,7 @@ func (c *controller) Decrement() {
 	c.count--
 }
 
-func (c *controller) ShutdownSignal() {
+func (c *controller) Stop() {
 	c.lock.Lock()
 	c.acceptNew = false
 	c.lock.Unlock()
@@ -74,9 +83,10 @@ func (c *controller) AddHandler(h Handler) {
 	wrappedHandler := Handler{
 		worker: h.worker,
 		handlerFunc: func() {
+			var canAccept bool
 			for {
 				c.lock.Lock()
-				canAccept := c.acceptNew
+				canAccept = c.acceptNew
 				c.lock.Unlock()
 
 				// 只有在 acceptNew 为 true 时才执行
