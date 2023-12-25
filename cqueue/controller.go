@@ -1,41 +1,53 @@
-package ckafka
+package cqueue
 
 import (
 	"context"
+	"errors"
+	"runtime"
 	"sync"
 	"time"
 )
 
 var c = &controller{
 	acceptNew: true,
+	ctx:       context.Background(),
 }
 
 func AddHandler(h Handler) {
 	c.AddHandler(h)
 }
 
-func RunHandlers() {
-	c.RunHandlers()
+func RunHandlers(ctx context.Context) {
+	c.RunHandlers(ctx)
 }
 
-func ShutdownSignal(ctx context.Context) {
+func ShutdownSignal(timeout time.Duration) error {
 	c.ShutdownSignal()
 
-	// 等待 ctx 完成或 count 降至 0
-	for {
+	tc := time.Tick(timeout)
+
+	done := make(chan struct{})
+
+	go func() {
 		c.lock.Lock()
 		count := c.count
 		c.lock.Unlock()
 
+		// 等待 ctx 完成或 count 降至 0
 		if count == 0 {
-			return // 如果 count 为 0，退出函数
+			done <- struct{}{}
+			return
 		}
 
+		runtime.Gosched()
+	}()
+
+	for {
 		select {
-		case <-ctx.Done():
-			return // 如果 context 完成，退出函数
-		default:
-			time.Sleep(time.Millisecond * 100) // 短暂等待再次检查
+		case <-tc:
+			return errors.New("shutdown timeout")
+		case <-done:
+			return nil
 		}
 	}
 }
@@ -45,10 +57,11 @@ type controller struct {
 	lock      sync.Mutex
 	acceptNew bool
 	handlers  []Handler
+	ctx       context.Context
 }
 
 type Handler struct {
-	handlerFunc func()
+	handlerFunc func(ctx context.Context)
 	worker      int
 }
 
@@ -73,7 +86,7 @@ func (c *controller) ShutdownSignal() {
 func (c *controller) AddHandler(h Handler) {
 	wrappedHandler := Handler{
 		worker: h.worker,
-		handlerFunc: func() {
+		handlerFunc: func(ctx context.Context) {
 			for {
 				c.lock.Lock()
 				canAccept := c.acceptNew
@@ -82,7 +95,7 @@ func (c *controller) AddHandler(h Handler) {
 				// 只有在 acceptNew 为 true 时才执行
 				if canAccept {
 					c.Increment()
-					h.handlerFunc()
+					h.handlerFunc(ctx)
 					c.Decrement()
 				} else {
 					return
@@ -94,10 +107,10 @@ func (c *controller) AddHandler(h Handler) {
 	c.handlers = append(c.handlers, wrappedHandler)
 }
 
-func (c *controller) RunHandlers() {
+func (c *controller) RunHandlers(ctx context.Context) {
 	for _, handler := range c.handlers {
 		for i := 0; i < handler.worker; i++ {
-			go handler.handlerFunc() // 启动每个处理器
+			go handler.handlerFunc(ctx) // 启动每个处理器
 		}
 	}
 }
