@@ -21,7 +21,8 @@ type QueryCondition struct {
 
 type MongoDB struct {
 	client   *mongo.Client
-	database string
+	database *mongo.Database
+	//database string
 }
 
 func NewMongoDB() Client {
@@ -58,26 +59,26 @@ func (m *MongoDB) Connect(ctx context.Context, database string, opts ...*options
 	}
 
 	m.client = client
-	m.database = database
+	m.database = m.client.Database(database)
 
 	return m, nil
 }
 
 func (m *MongoDB) Insert(ctx context.Context, collection string, document interface{}) error {
-	coll := m.client.Database(m.database).Collection(collection)
+	coll := m.database.Collection(collection)
 	_, err := coll.InsertOne(ctx, document)
 	return err
 }
 
 func (m *MongoDB) InsertBatch(ctx context.Context, collection string, documents []any) error {
-	coll := m.client.Database(m.database).Collection(collection)
+	coll := m.database.Collection(collection)
 	_, err := coll.InsertMany(ctx, documents)
 	return err
 }
 
 func (m *MongoDB) Update(ctx context.Context, collection string, qb *QueryBuilder, update interface{}) error {
 	filter, _, _ := qb.Build()
-	coll := m.client.Database(m.database).Collection(collection)
+	coll := m.database.Collection(collection)
 	_, err := coll.UpdateOne(ctx, filter, update)
 	return err
 }
@@ -88,7 +89,7 @@ type UpdateModel struct {
 }
 
 func (m *MongoDB) UpdateBatch(ctx context.Context, collection string, updates []UpdateModel) error {
-	coll := m.client.Database(m.database).Collection(collection)
+	coll := m.database.Collection(collection)
 	models := make([]mongo.WriteModel, len(updates))
 	for i, update := range updates {
 		filter, _, _ := update.Filter.Build()
@@ -100,13 +101,13 @@ func (m *MongoDB) UpdateBatch(ctx context.Context, collection string, updates []
 
 func (m *MongoDB) Delete(ctx context.Context, collection string, qb *QueryBuilder) error {
 	filter, _, _ := qb.Build()
-	coll := m.client.Database(m.database).Collection(collection)
+	coll := m.database.Collection(collection)
 	_, err := coll.DeleteOne(ctx, filter)
 	return err
 }
 
 func (m *MongoDB) DeleteBatch(ctx context.Context, collection string, deletes []*QueryBuilder) error {
-	coll := m.client.Database(m.database).Collection(collection)
+	coll := m.database.Collection(collection)
 	models := make([]mongo.WriteModel, len(deletes))
 	for i, del := range deletes {
 		filter, _, _ := del.Build()
@@ -118,7 +119,7 @@ func (m *MongoDB) DeleteBatch(ctx context.Context, collection string, deletes []
 
 func (m *MongoDB) Find(ctx context.Context, table string, qb *QueryBuilder, results any) error {
 	filter, group, opts := qb.Build()
-	collection := m.client.Database(m.database).Collection(table)
+	collection := m.database.Collection(table)
 	if len(group) > 0 {
 		pipeline := mongo.Pipeline{
 			{{Key: "$match", Value: filter}},
@@ -145,7 +146,7 @@ func (m *MongoDB) Find(ctx context.Context, table string, qb *QueryBuilder, resu
 
 func (m *MongoDB) Count(ctx context.Context, table string, qb *QueryBuilder) (int64, error) {
 	filter, group, _ := qb.Build()
-	collection := m.client.Database(m.database).Collection(table)
+	collection := m.database.Collection(table)
 	if len(group) > 0 {
 		pipeline := mongo.Pipeline{
 			{{Key: "$match", Value: filter}},
