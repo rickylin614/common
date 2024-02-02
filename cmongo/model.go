@@ -28,8 +28,8 @@ func NewMongoDB() Client {
 	return &MongoDB{}
 }
 
-func (m *MongoDB) Connect(ctx context.Context, uri, database string) (*MongoDB, error) {
-	client, err := mongo.Connect(ctx, options.Client().ApplyURI(uri))
+func (m *MongoDB) Connect(ctx context.Context, database string, opts ...*options.ClientOptions) (*MongoDB, error) {
+	client, err := mongo.Connect(ctx, opts...)
 	if err != nil {
 		return nil, err
 	}
