@@ -1,21 +1,19 @@
 package cmongo
 
-// type MongoDBWrapper interface {
-// 	Connect(ctx context.Context, uri string, database string) error
+import (
+	"context"
+)
 
-// 	// CRUD operations
-// 	Insert(ctx context.Context, collection string, document interface{}) error
-// 	Find(ctx context.Context, collection string, target any) error
-// 	Update(ctx context.Context, collection string, query interface{}, update interface{}) error
-// 	Delete(ctx context.Context, collection string, query interface{}) error
-// 	// UpdateBatch(collection string, updates []mongo.WriteModel)
-// 	// DeleteBatch(collection string, deletes []mongo.WriteModel) error
+type Client interface {
+	Connect(ctx context.Context, uri, database string) (*MongoDB, error)
 
-// 	// Fluent interface methods
-// 	Where(field string, value interface{}, comparison ...string) MongoDBWrapper
-// 	Sort(field string, order string) MongoDBWrapper
-// 	Limit(limit int64) MongoDBWrapper
-// 	Offset(offset int64) MongoDBWrapper
-// 	GroupBy(field string) MongoDBWrapper
-// 	Having(condition bson.M) MongoDBWrapper
-// }
+	Insert(ctx context.Context, collection string, document interface{}) error
+	InsertBatch(ctx context.Context, collection string, documents []any) error
+	Update(ctx context.Context, collection string, qb *QueryBuilder, update interface{}) error
+	UpdateBatch(ctx context.Context, collection string, updates []UpdateModel) error
+	Delete(ctx context.Context, collection string, qb *QueryBuilder) error
+	DeleteBatch(ctx context.Context, collection string, deletes []*QueryBuilder) error
+
+	Find(ctx context.Context, table string, qb *QueryBuilder, results any) error
+	Count(ctx context.Context, table string, qb *QueryBuilder) (int64, error)
+}

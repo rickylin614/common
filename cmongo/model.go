@@ -24,7 +24,7 @@ type MongoDB struct {
 	database string
 }
 
-func NewMongoDB() *MongoDB {
+func NewMongoDB() Client {
 	return &MongoDB{}
 }
 
