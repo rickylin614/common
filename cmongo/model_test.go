@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 var wrapper *MongoDB
@@ -15,7 +16,8 @@ func init() {
 	// docker run --name mongodb -d -p 27017:27017 -e MONGO_INITDB_ROOT_USERNAME=root -e MONGO_INITDB_ROOT_PASSWORD=example mongo
 
 	// 創建 MongoDB 實例
-	w, err := NewMongoDB().Connect(context.Background(), "mongodb://root:example@localhost:27017", "demo")
+	opt := options.Client().ApplyURI("demo")
+	w, err := NewMongoDB().Connect(context.Background(), "mongodb://root:example@localhost:27017", opt)
 	if err != nil {
 		panic(err)
 	}
